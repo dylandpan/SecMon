@@ -9,8 +9,8 @@
 
 Merged two independently-built components into a single deployable project:
 
-- **Pentest pipeline** (DP): EventBridge → SQS → Lambda (containerized) → DynamoDB + S3
-- **CodeSafe** (teammate): React frontend + Express backend on EC2 + DynamoDB tables + VPC
+- **Pentest pipeline** (Dylan): EventBridge → SQS → Lambda (containerized) → DynamoDB + S3
+- **CodeSafe** (Shurui): React frontend + Express backend on EC2 + DynamoDB tables + VPC
 
 ### Key decisions made during merge
 
