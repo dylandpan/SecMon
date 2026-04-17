@@ -73,3 +73,19 @@ output "lambda_function_name" {
   description = "Pentest Lambda function name"
   value       = aws_lambda_function.pentest_scanner.function_name
 }
+
+# ── SAST Pipeline ────────────────────────────────────────────────────────────
+output "sast_webhook_url" {
+  description = "GitHub webhook URL — add in repo Settings → Webhooks (Content type: application/json, event: push)"
+  value       = "${aws_apigatewayv2_api.sast_webhook.api_endpoint}/webhook"
+}
+
+output "sast_lambda_function_name" {
+  description = "SAST Lambda function name"
+  value       = aws_lambda_function.sast_scanner.function_name
+}
+
+output "sast_ecr_repository_url" {
+  description = "ECR repository URL — push SAST Lambda Docker image here before terraform apply"
+  value       = aws_ecr_repository.sast_scanner.repository_url
+}
