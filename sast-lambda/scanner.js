@@ -1,135 +1,219 @@
-// scanner.js — regex-based SAST rules
-// Detects vulnerability patterns in JavaScript/TypeScript source code.
-// Categories mirror the vulnerability types in sast-targets/vulnerable-app.js.
+import fs from 'fs';
+import path from 'path';
 
-const RULES = [
-  // ── HIGH ────────────────────────────────────────────────────────────────────
+// Vulnerability detection patterns
+const vulnerabilityRules = [
   {
     id: 'HARDCODED_SECRET',
-    severity: 'high',
+    name: 'Hardcoded Secret',
+    severity: 'HIGH',
     patterns: [
-      /(?:api[_-]?key|apikey|secret|password|passwd|token)\s*=\s*['"][^'"]{8,}['"]/gi,
-      /AKIA[0-9A-Z]{16}/g,
+      { regex: /(?:api[_-]?key|apikey)\s*[:=]\s*['"][a-zA-Z0-9]{16,}['"]/gi, desc: 'Hardcoded API key' },
+      { regex: /(?:password|passwd|pwd)\s*[:=]\s*['"][^'"]{4,}['"]/gi, desc: 'Hardcoded password' },
+      { regex: /(?:secret[_-]?key|secretkey)\s*[:=]\s*['"][a-zA-Z0-9]{16,}['"]/gi, desc: 'Hardcoded secret key' },
+      { regex: /(?:access[_-]?token|accesstoken)\s*[:=]\s*['"][a-zA-Z0-9]{16,}['"]/gi, desc: 'Hardcoded access token' },
+      { regex: /(?:aws[_-]?access[_-]?key[_-]?id)\s*[:=]\s*['"][A-Z0-9]{20}['"]/gi, desc: 'AWS Access Key ID' },
+      { regex: /(?:aws[_-]?secret[_-]?access[_-]?key)\s*[:=]\s*['"][A-Za-z0-9/+=]{40}['"]/gi, desc: 'AWS Secret Access Key' },
     ],
-    message: 'Hardcoded secret or API key detected',
-  },
-  {
-    id: 'SQL_INJECTION',
-    severity: 'high',
-    patterns: [
-      /["'`]\s*(?:SELECT|INSERT|UPDATE|DELETE|DROP)\b.+["'`]\s*\+/gi,
-      /\.query\s*\(\s*`[^`]*\$\{/gi,
-    ],
-    message: 'Potential SQL injection via string concatenation',
+    message: 'Hardcoded secret detected. Move secrets to environment variables.',
   },
   {
     id: 'NOSQL_INJECTION',
-    severity: 'high',
+    name: 'NoSQL Injection Risk',
+    severity: 'HIGH',
     patterns: [
-      /\.(find|findOne|update|delete)\s*\(\s*req\.(body|query|params)\s*\)/g,
+      { regex: /\.\s*find\s*\(\s*\{[^}]*\$where/gi, desc: '$where operator in MongoDB query' },
+      { regex: /\.\s*find\s*\(\s*\{[^}]*\$regex\s*:\s*[^/'"]/gi, desc: 'Unsanitized $regex in query' },
+      { regex: /\.\s*find\s*\(\s*req\.(body|query|params)/gi, desc: 'Direct user input in MongoDB find()' },
+      { regex: /\.\s*findOne\s*\(\s*req\.(body|query|params)/gi, desc: 'Direct user input in MongoDB findOne()' },
+      { regex: /\.\s*updateOne\s*\(\s*req\.(body|query|params)/gi, desc: 'Direct user input in MongoDB updateOne()' },
+      { regex: /\.\s*deleteOne\s*\(\s*req\.(body|query|params)/gi, desc: 'Direct user input in MongoDB deleteOne()' },
     ],
-    message: 'Potential NoSQL injection via unsanitized request input',
+    message: 'Potential NoSQL injection vulnerability. Sanitize user input before using in database queries.',
   },
   {
     id: 'XSS',
-    severity: 'high',
+    name: 'Cross-Site Scripting (XSS)',
+    severity: 'HIGH',
     patterns: [
-      /\.innerHTML\s*=\s*(?!['"`])/g,
-      /document\.write\s*\(/g,
+      { regex: /\.innerHTML\s*=\s*[^'"]/gi, desc: 'Dynamic innerHTML assignment' },
+      { regex: /\.outerHTML\s*=\s*[^'"]/gi, desc: 'Dynamic outerHTML assignment' },
+      { regex: /document\.write\s*\(/gi, desc: 'Usage of document.write()' },
+      { regex: /document\.writeln\s*\(/gi, desc: 'Usage of document.writeln()' },
+      { regex: /\.insertAdjacentHTML\s*\(/gi, desc: 'Usage of insertAdjacentHTML()' },
+      { regex: /dangerouslySetInnerHTML/gi, desc: 'React dangerouslySetInnerHTML usage' },
     ],
-    message: 'Potential XSS via direct DOM manipulation with dynamic content',
+    message: 'Potential XSS vulnerability. Sanitize user input before rendering in HTML.',
   },
   {
     id: 'PATH_TRAVERSAL',
-    severity: 'high',
+    name: 'Path Traversal',
+    severity: 'HIGH',
     patterns: [
-      /readFile(?:Sync)?\s*\(\s*req\.(body|query|params)/g,
-      /path\.join\s*\([^)]*req\.(body|query|params)/g,
+      { regex: /fs\.(readFile|readFileSync|writeFile|writeFileSync|unlink|unlinkSync)\s*\(\s*req\.(body|query|params)/gi, desc: 'User input directly in file operation' },
+      { regex: /fs\.(readFile|readFileSync|writeFile|writeFileSync)\s*\([^)]*\+\s*req\./gi, desc: 'User input concatenated in file path' },
+      { regex: /path\.join\s*\([^)]*req\.(body|query|params)/gi, desc: 'User input in path.join()' },
+      { regex: /['"][^'"]*\.\.\/[^'"]*['"]/g, desc: 'Path traversal sequence detected' },
     ],
-    message: 'Potential path traversal via unsanitized request input',
-  },
-  {
-    id: 'INSECURE_FUNCTION',
-    severity: 'high',
-    patterns: [
-      /\beval\s*\(/g,
-      /exec\s*\([^)]*(?:\+|`[^`]*\$\{)/g,
-      /new\s+Function\s*\(/g,
-    ],
-    message: 'Dangerous function: eval / exec / Function constructor',
-  },
-
-  // ── MEDIUM ──────────────────────────────────────────────────────────────────
-  {
-    id: 'HARDCODED_IP',
-    severity: 'medium',
-    patterns: [
-      /['"`]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?['"`]/g,
-    ],
-    message: 'Hardcoded IP address',
-  },
-  {
-    id: 'WEAK_CRYPTO',
-    severity: 'medium',
-    patterns: [
-      /createHash\s*\(\s*['"`](?:md5|sha1)['"`]\s*\)/gi,
-    ],
-    message: 'Weak cryptographic algorithm (MD5 or SHA1)',
+    message: 'Potential path traversal vulnerability. Validate and sanitize file paths.',
   },
   {
     id: 'INSECURE_RANDOM',
-    severity: 'medium',
+    name: 'Insecure Randomness',
+    severity: 'MEDIUM',
     patterns: [
-      /Math\.random\s*\(\s*\)/g,
+      { regex: /Math\.random\s*\(\s*\)/g, desc: 'Math.random() is not cryptographically secure' },
+      { regex: /Math\.random\s*\(\s*\).*(?:token|password|secret|key|auth|session)/gi, desc: 'Math.random() used for security-sensitive value' },
     ],
-    message: 'Math.random() is not cryptographically secure',
+    message: 'Math.random() is not cryptographically secure. Use crypto.randomBytes() or crypto.randomUUID() instead.',
   },
   {
     id: 'SENSITIVE_DATA_LOG',
-    severity: 'medium',
+    name: 'Sensitive Data Logging',
+    severity: 'MEDIUM',
     patterns: [
-      /console\.log\s*\([^)]*(?:password|passwd|secret|token|api[_-]?key|credit.?card)[^)]*\)/gi,
+      { regex: /console\.(log|info|debug|warn|error)\s*\([^)]*(?:password|passwd|pwd)[^)]*\)/gi, desc: 'Logging password' },
+      { regex: /console\.(log|info|debug|warn|error)\s*\([^)]*(?:token|secret|apikey|api_key)[^)]*\)/gi, desc: 'Logging sensitive token/key' },
+      { regex: /console\.(log|info|debug|warn|error)\s*\([^)]*(?:creditcard|credit_card|ssn|social_security)[^)]*\)/gi, desc: 'Logging sensitive personal data' },
     ],
-    message: 'Potential sensitive data written to logs',
+    message: 'Sensitive data may be logged. Remove or mask sensitive information in logs.',
   },
-
-  // ── LOW ─────────────────────────────────────────────────────────────────────
+  {
+    id: 'SQL_INJECTION',
+    name: 'SQL Injection Risk',
+    severity: 'HIGH',
+    patterns: [
+      { regex: /query\s*\(\s*['"`]SELECT.*\+/gi, desc: 'String concatenation in SELECT query' },
+      { regex: /query\s*\(\s*['"`]INSERT.*\+/gi, desc: 'String concatenation in INSERT query' },
+      { regex: /query\s*\(\s*['"`]UPDATE.*\+/gi, desc: 'String concatenation in UPDATE query' },
+      { regex: /query\s*\(\s*['"`]DELETE.*\+/gi, desc: 'String concatenation in DELETE query' },
+      { regex: /execute\s*\(\s*['"`].*\$\{/gi, desc: 'Template literal in SQL execute' },
+      { regex: /query\s*\(\s*`[^`]*\$\{/gi, desc: 'Template literal in SQL query' },
+    ],
+    message: 'Potential SQL injection vulnerability. Use parameterized queries instead.',
+  },
+  {
+    id: 'HARDCODED_IP',
+    name: 'Hardcoded IP Address',
+    severity: 'MEDIUM',
+    patterns: [
+      { regex: /['"](?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)['"]/g, desc: 'Hardcoded IPv4 address' },
+      { regex: /['"](?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?):\d+['"]/g, desc: 'Hardcoded IP with port' },
+    ],
+    message: 'Hardcoded IP address found. Use environment variables or configuration files.',
+  },
+  {
+    id: 'INSECURE_FUNCTION',
+    name: 'Insecure Function Usage',
+    severity: 'HIGH',
+    patterns: [
+      { regex: /\beval\s*\(/g, desc: 'Usage of eval()' },
+      { regex: /\bexec\s*\(/g, desc: 'Usage of exec()' },
+      { regex: /\bexecSync\s*\(/g, desc: 'Usage of execSync()' },
+      { regex: /\bspawn\s*\([^)]*\$\{/g, desc: 'Unvalidated input in spawn()' },
+      { regex: /new\s+Function\s*\(/g, desc: 'Usage of new Function()' },
+      { regex: /child_process.*exec/g, desc: 'child_process exec usage' },
+    ],
+    message: 'Insecure function detected. These functions can execute arbitrary code.',
+  },
   {
     id: 'SECURITY_TODO',
-    severity: 'low',
+    name: 'Security TODO/FIXME',
+    severity: 'LOW',
     patterns: [
-      /\/\/\s*(?:TODO|FIXME|HACK)\b.*(?:security|auth|vuln|inject|xss|password|secret)/gi,
+      { regex: /\/\/\s*TODO:?\s*.*(?:security|auth|password|token|secret|vuln|hack|fix)/gi, desc: 'Security-related TODO comment' },
+      { regex: /\/\/\s*FIXME:?\s*.*(?:security|auth|password|token|secret|vuln|hack)/gi, desc: 'Security-related FIXME comment' },
+      { regex: /\/\/\s*XXX:?\s*.*(?:security|auth|password|token|secret|vuln|hack)/gi, desc: 'Security-related XXX comment' },
+      { regex: /\/\/\s*HACK:?\s*.*/gi, desc: 'HACK comment found' },
+      { regex: /\/\*[\s\S]*?(?:security|vulnerability|TODO:?\s*auth)[\s\S]*?\*\//gi, desc: 'Security note in block comment' },
     ],
-    message: 'Unresolved security-related TODO/FIXME comment',
+    message: 'Security-related comment found. Ensure this is addressed before production.',
+  },
+  {
+    id: 'WEAK_CRYPTO',
+    name: 'Weak Cryptography',
+    severity: 'MEDIUM',
+    patterns: [
+      { regex: /createHash\s*\(\s*['"]md5['"]\s*\)/gi, desc: 'MD5 hash usage' },
+      { regex: /createHash\s*\(\s*['"]sha1['"]\s*\)/gi, desc: 'SHA1 hash usage' },
+      { regex: /crypto\.createCipher\s*\(/g, desc: 'Deprecated createCipher usage' },
+      { regex: /crypto\.createDecipher\s*\(/g, desc: 'Deprecated createDecipher usage' },
+      { regex: /DES|RC4|RC2|Blowfish/gi, desc: 'Weak encryption algorithm' },
+    ],
+    message: 'Weak cryptographic algorithm detected. Use stronger alternatives like SHA256 or AES-256.',
   },
 ];
 
-export function scanCode(source, filePath) {
-  const lines = source.split('\n');
-  const findings = [];
+const getLineNumber = (code, index) => code.substring(0, index).split('\n').length;
+const getLineContent = (code, lineNumber) => code.split('\n')[lineNumber - 1]?.trim() || '';
 
-  for (const rule of RULES) {
-    const matchedLines = new Set();
+export const scanCode = (code, filename = 'untitled.js') => {
+  const vulnerabilities = [];
 
+  for (const rule of vulnerabilityRules) {
     for (const pattern of rule.patterns) {
-      for (let i = 0; i < lines.length; i++) {
-        if (pattern.test(lines[i])) {
-          matchedLines.add(i + 1); // 1-indexed line numbers
-        }
-        pattern.lastIndex = 0; // reset global regex state
-      }
-    }
+      let match;
+      const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
 
-    for (const line of matchedLines) {
-      findings.push({
-        type: rule.id,
-        severity: rule.severity,
-        message: rule.message,
-        file: filePath,
-        line,
-      });
+      while ((match = regex.exec(code)) !== null) {
+        const lineNumber = getLineNumber(code, match.index);
+        const lineContent = getLineContent(code, lineNumber);
+
+        vulnerabilities.push({
+          id:          rule.id,
+          name:        rule.name,
+          severity:    rule.severity,
+          description: pattern.desc,
+          message:     rule.message,
+          file:        filename,
+          line:        lineNumber,
+          column:      match.index - code.lastIndexOf('\n', match.index - 1),
+          evidence:    lineContent.length > 100 ? lineContent.substring(0, 100) + '...' : lineContent,
+        });
+      }
     }
   }
 
-  return findings;
-}
+  const severityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  vulnerabilities.sort((a, b) => {
+    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
+      return severityOrder[a.severity] - severityOrder[b.severity];
+    }
+    return a.line - b.line;
+  });
+
+  return vulnerabilities;
+};
+
+export const scanFile = (filepath) => {
+  if (!fs.existsSync(filepath)) throw new Error(`File not found: ${filepath}`);
+  const code = fs.readFileSync(filepath, 'utf-8');
+  return scanCode(code, filepath);
+};
+
+export const scanDirectory = (dirpath, extensions = ['.js', '.mjs', '.cjs', '.ts']) => {
+  if (!fs.existsSync(dirpath)) throw new Error(`Directory not found: ${dirpath}`);
+
+  const results = {};
+  const scanDir = (currentPath) => {
+    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+        scanDir(fullPath);
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (extensions.includes(ext)) {
+          const vulns = scanFile(fullPath);
+          if (vulns.length > 0) results[fullPath] = vulns;
+        }
+      }
+    }
+  };
+
+  scanDir(dirpath);
+  return results;
+};
+
+export default { scanCode, scanFile, scanDirectory };

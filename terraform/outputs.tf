@@ -84,3 +84,8 @@ output "sast_lambda_function_name" {
   description = "SAST Lambda function name"
   value       = aws_lambda_function.sast_scanner.function_name
 }
+
+output "sast_ecr_repository_url" {
+  description = "ECR repository URL — push SAST Lambda Docker image here before terraform apply"
+  value       = aws_ecr_repository.sast_scanner.repository_url
+}

@@ -64,9 +64,3 @@ variable "github_webhook_secret" {
   default     = ""
 }
 
-variable "github_token" {
-  description = "GitHub personal access token (read:contents scope) for fetching repo file contents"
-  type        = string
-  sensitive   = true
-  default     = ""
-}

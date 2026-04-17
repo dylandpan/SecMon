@@ -1,39 +1,33 @@
 # sast-lambda.tf
-# SAST Lambda — zipped Node.js function, deployed via S3.
+# SAST Lambda — containerized (needs git binary for repo cloning).
 # Triggered by API Gateway on GitHub push webhook events.
+# Writes scan results directly to the secmon-scans DynamoDB table.
 
-# Zip the sast-lambda source directory (no node_modules — zero external deps)
-data "archive_file" "sast_lambda" {
-  type        = "zip"
-  source_dir  = "${path.module}/../sast-lambda"
-  output_path = "${path.module}/sast-lambda.zip"
-}
+resource "aws_ecr_repository" "sast_scanner" {
+  name         = "${var.project_name}-sast-scanner"
+  force_delete = true
 
-# Upload zip to the existing S3 bucket (reusing pentest_reports bucket)
-resource "aws_s3_object" "sast_lambda_zip" {
-  bucket = aws_s3_bucket.pentest_reports.id
-  key    = "lambda/sast-lambda.zip"
-  source = data.archive_file.sast_lambda.output_path
-  etag   = data.archive_file.sast_lambda.output_base64sha256
+  tags = { Name = "${var.project_name}-sast-scanner" }
 }
 
 resource "aws_lambda_function" "sast_scanner" {
   function_name = "${var.project_name}-sast-scanner"
   role          = var.lab_role_arn
-  runtime       = "nodejs20.x"
-  handler       = "handler.handler"
-  timeout       = 60
-  memory_size   = 256
+  package_type  = "Image"
+  image_uri     = "${aws_ecr_repository.sast_scanner.repository_url}:latest"
+  timeout       = 300      # 5 min — clone + scan of a medium repo
+  memory_size   = 1024
+  architectures = ["arm64"]
 
-  s3_bucket        = aws_s3_bucket.pentest_reports.id
-  s3_key           = aws_s3_object.sast_lambda_zip.key
-  source_code_hash = data.archive_file.sast_lambda.output_base64sha256
+  ephemeral_storage {
+    size = 2048            # 2 GB /tmp for cloning larger repos
+  }
 
   environment {
     variables = {
-      BACKEND_URL           = "http://${aws_instance.backend.public_ip}:3000"
+      REPORT_BUCKET         = aws_s3_bucket.pentest_reports.id
+      SCAN_RESULTS_TABLE    = aws_dynamodb_table.scans.name
       GITHUB_WEBHOOK_SECRET = var.github_webhook_secret
-      GITHUB_TOKEN          = var.github_token
     }
   }
 

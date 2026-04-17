@@ -1,7 +1,10 @@
 {
-  "name": "sast-scanner",
+  "name": "sast-lambda",
   "version": "1.0.0",
-  "description": "SAST Lambda — static analysis scanner triggered by GitHub push webhooks",
   "type": "module",
-  "main": "handler.js"
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0"
+  }
 }
