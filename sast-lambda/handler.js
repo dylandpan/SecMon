@@ -2,7 +2,7 @@ import { execFileSync } from "child_process";
 import { createHmac, timingSafeEqual, randomUUID } from "crypto";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import fs from "fs";
 import { scanDirectory } from "./scanner.js";
 
@@ -12,6 +12,7 @@ const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({ region: REGION }
 
 const REPORT_BUCKET       = process.env.REPORT_BUCKET        || "secmon-pentest-reports";
 const SCAN_RESULTS_TABLE  = process.env.SCAN_RESULTS_TABLE   || "secmon-scans";
+const REPOS_TABLE         = process.env.TABLE_REPOS          || "secmon-repos";
 const WEBHOOK_SECRET      = process.env.GITHUB_WEBHOOK_SECRET;
 
 // HMAC-SHA256 verification using timing-safe comparison to prevent timing attacks
@@ -59,6 +60,25 @@ export const lambdaHandler = async (event) => {
     body = JSON.parse(rawBody);
   } catch {
     return resp(400, { error: "Invalid JSON payload" });
+  }
+
+  // Handle GitHub ping — sent when a webhook is first configured
+  if (eventType === "ping") {
+    const repoId = body?.repository?.full_name;
+    if (repoId) {
+      try {
+        await dynamo.send(new UpdateCommand({
+          TableName:                REPOS_TABLE,
+          Key:                      { repoId },
+          UpdateExpression:         "SET connected = :t, connectedAt = :ts",
+          ExpressionAttributeValues: { ":t": true, ":ts": new Date().toISOString() },
+        }));
+        console.log(`Marked ${repoId} as connected`);
+      } catch (e) {
+        console.error("Failed to update repo connected status:", e.message);
+      }
+    }
+    return resp(200, { message: "Ping received" });
   }
 
   // Only process push events that have commits (ignore branch deletions)

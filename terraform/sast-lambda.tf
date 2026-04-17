@@ -27,6 +27,7 @@ resource "aws_lambda_function" "sast_scanner" {
     variables = {
       REPORT_BUCKET         = aws_s3_bucket.pentest_reports.id
       SCAN_RESULTS_TABLE    = aws_dynamodb_table.scans.name
+      TABLE_REPOS           = aws_dynamodb_table.repos.name
       GITHUB_WEBHOOK_SECRET = var.github_webhook_secret
     }
   }
