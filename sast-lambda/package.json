@@ -1,0 +1,7 @@
+{
+  "name": "sast-scanner",
+  "version": "1.0.0",
+  "description": "SAST Lambda — static analysis scanner triggered by GitHub push webhooks",
+  "type": "module",
+  "main": "handler.js"
+}

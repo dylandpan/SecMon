@@ -55,3 +55,18 @@ variable "lab_role_arn" {
   description = "ARN of the pre-existing LabRole in AWS Learner Lab"
   type        = string
 }
+
+# ── SAST Lambda ──────────────────────────────────────────────────────────────
+variable "github_webhook_secret" {
+  description = "GitHub webhook secret for validating incoming webhook payloads (HMAC-SHA256)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "github_token" {
+  description = "GitHub personal access token (read:contents scope) for fetching repo file contents"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
