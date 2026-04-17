@@ -1,5 +1,5 @@
 // frontend/src/App.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import SASTPage    from "./pages/SASTPage";
 import PenTestPage from "./pages/PenTestPage";
 import GitHubPage  from "./pages/GitHubPage";
@@ -10,8 +10,27 @@ const NAV = [
   { id: "github",  icon: "⚙️",  label: "GitHub Config" },
 ];
 
+const VALID_PAGES = NAV.map(n => n.id);
+const getPageFromHash = () => {
+  const hash = window.location.hash.replace("#", "");
+  return VALID_PAGES.includes(hash) ? hash : "sast";
+};
+
 export default function App() {
-  const [page, setPage] = useState("sast");
+  const [page, setPage] = useState(getPageFromHash);
+
+  // Sync state → URL hash when user clicks a tab
+  const navigate = (id) => {
+    window.location.hash = id;
+    setPage(id);
+  };
+
+  // Sync URL hash → state on browser back/forward/refresh
+  useEffect(() => {
+    const onHashChange = () => setPage(getPageFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#0f172a",
       color: "#e2e8f0", fontFamily: "system-ui, sans-serif" }}>
@@ -24,7 +43,7 @@ export default function App() {
           <div style={{ fontSize: "11px", color: "#475569", marginTop: "2px" }}>Security Monitor</div>
         </div>
         {NAV.map(n => (
-          <button key={n.id} onClick={() => setPage(n.id)} style={{
+          <button key={n.id} onClick={() => navigate(n.id)} style={{
             display: "flex", alignItems: "center", gap: "10px",
             padding: "10px 12px", borderRadius: "8px", border: "none",
             cursor: "pointer", fontSize: "13px", textAlign: "left",

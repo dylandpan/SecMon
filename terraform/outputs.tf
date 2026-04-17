@@ -89,3 +89,14 @@ output "sast_ecr_repository_url" {
   description = "ECR repository URL — push SAST Lambda Docker image here before terraform apply"
   value       = aws_ecr_repository.sast_scanner.repository_url
 }
+
+# ── Frontend ─────────────────────────────────────────────────────────────────
+output "frontend_bucket" {
+  description = "S3 bucket hosting the frontend"
+  value       = aws_s3_bucket.frontend.id
+}
+
+output "frontend_url" {
+  description = "Public URL of the frontend (S3 website endpoint)"
+  value       = "http://${aws_s3_bucket_website_configuration.frontend.website_endpoint}"
+}

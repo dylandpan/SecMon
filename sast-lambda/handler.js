@@ -49,6 +49,8 @@ export const lambdaHandler = async (event) => {
   const rawBody   = event.body || "";
   const signature = event.headers?.["x-hub-signature-256"]
                  || event.headers?.["X-Hub-Signature-256"];
+  const eventType = event.headers?.["x-github-event"]
+                 || event.headers?.["X-GitHub-Event"];
 
   if (!verifyGitHubSignature(rawBody, signature)) {
     console.error("Webhook signature verification failed");

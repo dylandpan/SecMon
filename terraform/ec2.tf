@@ -73,6 +73,7 @@ resource "aws_instance" "backend" {
     export SQS_QUEUE_URL=${aws_sqs_queue.pentest_jobs.url}
     export SQS_QUEUE_ARN=${aws_sqs_queue.pentest_jobs.arn}
     export S3_BUCKET=${aws_s3_bucket.pentest_reports.id}
+    export WEBHOOK_URL=${aws_apigatewayv2_api.sast_webhook.api_endpoint}/webhook
     ENV
     source /etc/profile.d/secmon.sh
 
@@ -97,6 +98,7 @@ resource "aws_instance" "backend" {
     Environment=SQS_QUEUE_URL=${aws_sqs_queue.pentest_jobs.url}
     Environment=SQS_QUEUE_ARN=${aws_sqs_queue.pentest_jobs.arn}
     Environment=S3_BUCKET=${aws_s3_bucket.pentest_reports.id}
+    Environment=WEBHOOK_URL=${aws_apigatewayv2_api.sast_webhook.api_endpoint}/webhook
 
     [Install]
     WantedBy=multi-user.target

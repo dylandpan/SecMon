@@ -72,21 +72,34 @@ docker build --provenance=false --platform linux/arm64 -t secmon-sast-scanner .
 docker tag secmon-sast-scanner:latest "$SAST_ECR_REPO:latest"
 docker push "$SAST_ECR_REPO:latest"
 
-# ─── Step 5: Full Terraform apply (Lambda + EC2 now have deps) ──
+# ─── Step 5: Full Terraform apply (Lambda + EC2 + frontend bucket) ──
 echo ""
-echo ">>> Step 5: Terraform apply (full — creates Lambda + EC2)"
+echo ">>> Step 5: Terraform apply (full — creates Lambda + EC2 + frontend bucket)"
 cd "$TF_DIR"
 terraform apply -auto-approve
 
-# ─── Step 6: Print summary ──────────────────────────────────────
+# ─── Step 6: Build and sync frontend to S3 ─────────────────────
+echo ""
+echo ">>> Step 6: Build frontend + sync to S3"
+EC2_IP=$(terraform output -raw ec2_public_ip)
+FRONTEND_BUCKET=$(terraform output -raw frontend_bucket)
+
+cd "$SCRIPT_DIR/frontend"
+[ ! -d node_modules ] && npm install
+VITE_API_URL="http://$EC2_IP:3000" npm run build
+aws s3 sync dist/ "s3://$FRONTEND_BUCKET/" --delete
+
+# ─── Step 7: Print summary ──────────────────────────────────────
 echo ""
 echo "=== Deploy Complete ==="
 echo ""
+cd "$TF_DIR"
 terraform output
 echo ""
-EC2_IP=$(terraform output -raw ec2_public_ip)
 SQS_URL=$(terraform output -raw sqs_queue_url)
 SAST_WEBHOOK=$(terraform output -raw sast_webhook_url)
+FRONTEND_URL=$(terraform output -raw frontend_url)
+echo "Frontend:      $FRONTEND_URL"
 echo "Backend API:   http://$EC2_IP:3000"
 echo "SQS Queue:     $SQS_URL"
 echo "SAST Webhook:  $SAST_WEBHOOK"
