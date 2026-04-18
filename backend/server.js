@@ -8,7 +8,7 @@ const express    = require("express");
 const cors       = require("cors");
 const { DynamoDBClient }         = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient,
-        GetCommand, PutCommand,
+        GetCommand, PutCommand, UpdateCommand,
         QueryCommand, ScanCommand,
         DeleteCommand }           = require("@aws-sdk/lib-dynamodb");
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
@@ -201,15 +201,24 @@ app.post("/api/repos", wrap(async (req, res) => {
   const { name } = req.body;
   if (!name) return res.status(400).json({ error: "name is required" });
 
-  const item = {
-    repoId:    name,
-    connected: false,
-    events:    [],
-    addedAt:   new Date().toISOString(),
-  };
+  // Use if_not_exists for connected/events so we don't overwrite values
+  // the SAST Lambda may have already set from a GitHub ping event.
+  const result = await ddb.send(new UpdateCommand({
+    TableName: TABLES.repos,
+    Key:       { repoId: name },
+    UpdateExpression:
+      "SET connected = if_not_exists(connected, :f), " +
+      "events    = if_not_exists(events, :e), " +
+      "addedAt   = if_not_exists(addedAt, :t)",
+    ExpressionAttributeValues: {
+      ":f": false,
+      ":e": [],
+      ":t": new Date().toISOString(),
+    },
+    ReturnValues: "ALL_NEW",
+  }));
 
-  await ddb.send(new PutCommand({ TableName: TABLES.repos, Item: item }));
-  res.status(201).json(item);
+  res.status(201).json(result.Attributes);
 }));
 
 // ── Schedules ─────────────────────────────────────────────────────────────────
