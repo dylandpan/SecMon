@@ -8,8 +8,7 @@ const NAV = [
   { id: "sast",    icon: "🔍", label: "SAST Scans"    },
   { id: "pentest", icon: "🔬", label: "Pen Tests"     },
   { id: "github",  icon: "⚙️",  label: "GitHub Config" },
-];
-
+]; 
 const VALID_PAGES = NAV.map(n => n.id);
 const getPageFromHash = () => {
   const hash = window.location.hash.replace("#", "");
